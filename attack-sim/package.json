@@ -1,0 +1,9 @@
+{
+  "name": "attack-sim",
+  "version": "0.1.0",
+  "scripts": {
+    "bruteforce": "node bruteforce.js",
+    "flood": "node flood.js",
+    "injection": "node injection.js"
+  }
+}
