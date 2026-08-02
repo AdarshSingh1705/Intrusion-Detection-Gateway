@@ -6,6 +6,7 @@ const User = require('../models/User');
 const redis = require('../config/redis');
 const defaultTenant = require('../config/defaultTenant');
 const { lockAccount, isLocked } = require('../services/lockout');
+const { notifyUser } = require('../services/alerting');
 
 function issueTokens(user) {
   const accessToken = jwt.sign(
@@ -22,7 +23,7 @@ function issueTokens(user) {
 }
 
 router.post('/signup', async (req, res) => {
-  const { username, password } = req.body;
+  const { username, password, email } = req.body;
   if (!username || !password)
     return res.status(400).json({ error: 'username and password required' });
 
@@ -34,6 +35,7 @@ router.post('/signup', async (req, res) => {
     tenantId: defaultTenant.tenantId,
     username,
     passwordHash,
+    email: email || null,
     knownDevices: [],
   });
   res.status(201).json({ userId: user._id });
@@ -62,6 +64,12 @@ router.post('/login', async (req, res) => {
 
     if (failCount >= defaultTenant.thresholds.authFailMax) {
       await lockAccount(tenantId, username);
+      // Fire-and-forget user notification
+      notifyUser(
+        user?.email,
+        'Your account has been locked',
+        `Your account "${username}" was locked due to too many failed login attempts.\nIf this wasn't you, please contact support.`
+      ).catch(() => {});
       return res.status(423).json({ error: 'account_locked', reason: 'brute_force' });
     }
 

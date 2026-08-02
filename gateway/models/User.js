@@ -6,6 +6,7 @@ const userSchema = new mongoose.Schema({
   tenantId: { type: String, index: true },
   username: String,
   passwordHash: String,
+  email: { type: String, default: null },
   knownDevices: [{ ip: String, userAgent: String, firstSeenAt: Date }],
   createdAt: { type: Date, default: Date.now },
 });
