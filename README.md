@@ -14,11 +14,11 @@ Client → Gateway (guards run in parallel) → Decision Engine → Allow / Thro
                                                        Origin Server
 ```
 
-| Guard | Detects | Mechanism |
-|---|---|---|
-| Auth Guard | Brute-force, credential stuffing | Redis fail counters per username + IP |
-| Rate Guard | Application-layer DoS / API abuse | Fixed-window Redis counter per IP |
-| Payload Guard | SQLi, XSS | Regex signature matching on body, query, cookies |
+| Guard         | Detects                           | Mechanism                                        |
+| ------------- | --------------------------------- | ------------------------------------------------ |
+| Auth Guard    | Brute-force, credential stuffing  | Redis fail counters per username + IP            |
+| Rate Guard    | Application-layer DoS / API abuse | Fixed-window Redis counter per IP                |
+| Payload Guard | SQLi, XSS                         | Regex signature matching on body, query, cookies |
 
 The Decision Engine merges the three verdicts using a fixed priority order (injection > auth > rate > suspicious > allow) and returns one final action.
 
@@ -26,19 +26,20 @@ The Decision Engine merges the three verdicts using a fixed priority order (inje
 
 ## Services
 
-| Service | Port | Description |
-|---|---|---|
-| `gateway` | 8080 | Reverse proxy + all guards + management API |
-| `demo-site` | 4000 | Deliberately unprotected "victim" app |
-| `redis` | 6379 | Fast state — rate counters, blocklists, token revocation |
-| `mongo` | 27017 | Durable state — events, alerts, users, tenants |
-| `dashboard` | 3000 | React control plane — Live Feed, Investigate, Settings |
+| Service       | Port  | Description                                               |
+| ------------- | ----- | --------------------------------------------------------- |
+| `gateway`   | 8080  | Reverse proxy + all guards + management API               |
+| `demo-site` | 4000  | Deliberately unprotected "victim" app                     |
+| `redis`     | 6379  | Fast state — rate counters, blocklists, token revocation |
+| `mongo`     | 27017 | Durable state — events, alerts, users, tenants           |
+| `dashboard` | 3000  | React control plane — Live Feed, Investigate, Settings   |
 
 ---
 
 ## Getting started
 
 **1. Clone and configure**
+
 ```bash
 git clone <repo-url>
 cd intrusion-detection-gateway
@@ -46,16 +47,19 @@ cp .env.example .env
 ```
 
 Edit `.env` and set at minimum:
+
 ```
 JWT_SECRET=your_strong_secret_here
 ```
 
 **2. Start everything**
+
 ```bash
 docker compose up --build
 ```
 
 **3. Verify it's running**
+
 ```bash
 curl http://localhost:8080/
 # → HTML login page from demo-site (proxied through the gateway)
@@ -71,14 +75,15 @@ Navigate to `http://localhost:3000` and log in with the seeded admin credentials
 
 On first boot the gateway automatically creates:
 
-| Resource | Value |
-|---|---|
-| Admin user | `ADMIN_USERNAME` / `ADMIN_PASSWORD` (from `.env`) |
-| Default tenant | `tenantId: "default"` with test thresholds |
+| Resource       | Value                                                   |
+| -------------- | ------------------------------------------------------- |
+| Admin user     | `ADMIN_USERNAME` / `ADMIN_PASSWORD` (from `.env`) |
+| Default tenant | `tenantId: "default"` with test thresholds            |
 
 The seed is idempotent — it checks for existence before creating, so it is safe to run on every restart.
 
 To reset and re-seed with different credentials:
+
 ```bash
 docker compose down -v          # wipe MongoDB volume
 # edit ADMIN_USERNAME / ADMIN_PASSWORD in .env
@@ -89,20 +94,20 @@ docker compose up --build
 
 ## Environment variables
 
-| Variable | Required | Description |
-|---|---|---|
-| `PORT` | No | Gateway port (default `8080`) |
-| `MONGO_URI` | Yes | MongoDB connection string |
-| `REDIS_URL` | Yes | Redis connection string |
-| `JWT_SECRET` | Yes | Secret for signing access + refresh tokens |
-| `JWT_ACCESS_TTL` | No | Access token lifetime (default `15m`) |
-| `JWT_REFRESH_TTL` | No | Refresh token lifetime (default `7d`) |
-| `ADMIN_USERNAME` | No | Seeded admin username (default `admin`) |
-| `ADMIN_PASSWORD` | No | Seeded admin password (default `admin123`) |
-| `DEMO_SITE_ORIGIN_URL` | No | Origin to proxy to (default `http://demo-site:4000`) |
-| `BREVO_API_KEY` | No | Brevo API key — enables email alerts (admin + user notifications) |
-| `ALERT_SENDER_EMAIL` | No | From address for all alert emails |
-| `ADMIN_ALERT_EMAIL` | No | Destination address for admin security alerts |
+| Variable                 | Required | Description                                                        |
+| ------------------------ | -------- | ------------------------------------------------------------------ |
+| `PORT`                 | No       | Gateway port (default`8080`)                                     |
+| `MONGO_URI`            | Yes      | MongoDB connection string                                          |
+| `REDIS_URL`            | Yes      | Redis connection string                                            |
+| `JWT_SECRET`           | Yes      | Secret for signing access + refresh tokens                         |
+| `JWT_ACCESS_TTL`       | No       | Access token lifetime (default`15m`)                             |
+| `JWT_REFRESH_TTL`      | No       | Refresh token lifetime (default`7d`)                             |
+| `ADMIN_USERNAME`       | No       | Seeded admin username (default`admin`)                           |
+| `ADMIN_PASSWORD`       | No       | Seeded admin password (default`admin123`)                        |
+| `DEMO_SITE_ORIGIN_URL` | No       | Origin to proxy to (default`http://demo-site:4000`)              |
+| `BREVO_API_KEY`        | No       | Brevo API key — enables email alerts (admin + user notifications) |
+| `ALERT_SENDER_EMAIL`   | No       | From address for all alert emails                                  |
+| `ADMIN_ALERT_EMAIL`    | No       | Destination address for admin security alerts                      |
 
 ---
 
@@ -110,10 +115,10 @@ docker compose up --build
 
 The gateway sends two categories of email when `BREVO_API_KEY` is set:
 
-| Trigger | Recipient | Subject |
-|---|---|---|
-| Guard fires (block/throttle event) | Admin (`ADMIN_ALERT_EMAIL`) | `[Gateway Alert] <rule> — <severity>` |
-| Account locked after brute-force | Affected user (their registered email) | `Your account has been locked` |
+| Trigger                                      | Recipient                              | Subject                                          |
+| -------------------------------------------- | -------------------------------------- | ------------------------------------------------ |
+| Guard fires (block/throttle event)           | Admin (`ADMIN_ALERT_EMAIL`)          | `[Gateway Alert] <rule> — <severity>`         |
+| Account locked after brute-force             | Affected user (their registered email) | `Your account has been locked`                 |
 | IP blocked after credential stuffing / flood | Affected user (their registered email) | `Suspicious activity detected on your account` |
 
 All three are **fire-and-forget** — a Brevo failure never blocks the response path.
@@ -121,6 +126,7 @@ All three are **fire-and-forget** — a Brevo failure never blocks the response 
 If `BREVO_API_KEY` is not set, the gateway runs normally. Alerts are still written to MongoDB and visible in the dashboard. No emails are sent and no errors are thrown.
 
 To register a user with an email address so they can receive notifications:
+
 ```bash
 curl -X POST http://localhost:8080/auth/signup \
   -H "Content-Type: application/json" \
@@ -133,35 +139,36 @@ curl -X POST http://localhost:8080/auth/signup \
 
 ### Auth — public endpoints
 
-| Method | Path | Body | Response |
-|---|---|---|---|
-| `POST` | `/auth/signup` | `{ username, password, email? }` | `201 { userId }` |
-| `POST` | `/auth/login` | `{ username, password }` | `200 { accessToken, refreshToken }` |
-| `POST` | `/auth/refresh` | `{ refreshToken }` | `200 { accessToken }` |
+| Method   | Path              | Body                               | Response                              |
+| -------- | ----------------- | ---------------------------------- | ------------------------------------- |
+| `POST` | `/auth/signup`  | `{ username, password, email? }` | `201 { userId }`                    |
+| `POST` | `/auth/login`   | `{ username, password }`         | `200 { accessToken, refreshToken }` |
+| `POST` | `/auth/refresh` | `{ refreshToken }`               | `200 { accessToken }`               |
 
 Login responses:
+
 - `401` — invalid credentials
 - `423` — account locked (brute-force threshold reached)
 - `403` — blocked by guard (injection or credential stuffing)
 
 ### Management API — requires `Authorization: Bearer <accessToken>`
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/api/events?since=&severity=&limit=` | Filterable event log |
-| `GET` | `/api/events/ip/:ip` | All events for a specific IP |
-| `GET` | `/api/alerts?acknowledged=false` | Unacknowledged alerts |
-| `PATCH` | `/api/alerts/:id/acknowledge` | Mark an alert as handled |
-| `POST` | `/api/blocklist/:ip` | Manually block an IP (15 min TTL) |
-| `DELETE` | `/api/blocklist/:ip` | Manually unblock an IP |
+| Method     | Path                                    | Description                       |
+| ---------- | --------------------------------------- | --------------------------------- |
+| `GET`    | `/api/events?since=&severity=&limit=` | Filterable event log              |
+| `GET`    | `/api/events/ip/:ip`                  | All events for a specific IP      |
+| `GET`    | `/api/alerts?acknowledged=false`      | Unacknowledged alerts             |
+| `PATCH`  | `/api/alerts/:id/acknowledge`         | Mark an alert as handled          |
+| `POST`   | `/api/blocklist/:ip`                  | Manually block an IP (15 min TTL) |
+| `DELETE` | `/api/blocklist/:ip`                  | Manually unblock an IP            |
 
 ### Tenant onboarding
 
-| Method | Path | Body | Response |
-|---|---|---|---|
-| `POST` | `/api/tenants` | `{ domain, originUrl }` | `201 { tenantId, apiKey }` — key shown once |
-| `GET` | `/api/tenants/:tenantId` | — | `200 { tenant config }` |
-| `PATCH` | `/api/tenants/:tenantId/thresholds` | `{ authFailMax, rateWarnMax, rateBlockMax }` | `200` |
+| Method    | Path                                  | Body                                           | Response                                       |
+| --------- | ------------------------------------- | ---------------------------------------------- | ---------------------------------------------- |
+| `POST`  | `/api/tenants`                      | `{ domain, originUrl }`                      | `201 { tenantId, apiKey }` — key shown once |
+| `GET`   | `/api/tenants/:tenantId`            | —                                             | `200 { tenant config }`                      |
+| `PATCH` | `/api/tenants/:tenantId/thresholds` | `{ authFailMax, rateWarnMax, rateBlockMax }` | `200`                                        |
 
 ---
 
@@ -170,6 +177,7 @@ Login responses:
 ### Auth Guard — brute-force
 
 Sign up a user first, then run the brute-force sim:
+
 ```bash
 # Sign up (email is optional but enables lockout notification)
 curl -X POST http://localhost:8080/auth/signup \
@@ -219,11 +227,11 @@ docker compose stop demo-site
 
 The React dashboard at `http://localhost:3000` provides three views:
 
-| Page | Description |
-|---|---|
-| Live Feed | Auto-refreshing event log (5 s poll), alert banner, manual block button |
-| Investigate | IP lookup — full event history, summary stats, block / unblock controls |
-| Settings | Live threshold sliders — changes persist to MongoDB via the management API |
+| Page        | Description                                                                 |
+| ----------- | --------------------------------------------------------------------------- |
+| Live Feed   | Auto-refreshing event log (5 s poll), alert banner, manual block button     |
+| Investigate | IP lookup — full event history, summary stats, block / unblock controls    |
+| Settings    | Live threshold sliders — changes persist to MongoDB via the management API |
 
 Log in with the seeded admin credentials. The dashboard proxies `/api` and `/auth` to the gateway so no CORS configuration is needed.
 

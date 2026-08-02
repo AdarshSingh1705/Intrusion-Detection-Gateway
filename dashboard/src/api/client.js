@@ -10,6 +10,36 @@ async function request(path, options = {}) {
     ...options,
     headers: { 'Content-Type': 'application/json', ...authHeaders(), ...options.headers },
   });
+
+  // On 401, attempt a silent token refresh once then retry
+  if (res.status === 401) {
+    const refreshToken = localStorage.getItem('refreshToken');
+    if (refreshToken) {
+      const refreshRes = await fetch(`${BASE}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      });
+      if (refreshRes.ok) {
+        const { accessToken } = await refreshRes.json();
+        localStorage.setItem('accessToken', accessToken);
+        // Retry original request with new token
+        const retry = await fetch(`${BASE}${path}`, {
+          ...options,
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}`, ...options.headers },
+        });
+        if (!retry.ok) throw new Error(`${retry.status} ${retry.statusText}`);
+        const text = await retry.text();
+        return text ? JSON.parse(text) : null;
+      }
+    }
+    // Refresh failed or no token — clear session and redirect to login
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
+    window.location.href = '/login';
+    return;
+  }
+
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   const text = await res.text();
   return text ? JSON.parse(text) : null;

@@ -4,6 +4,9 @@ require('./services/healthMonitor');
 
 const express = require('express');
 const app = express();
+// Trust the Docker/reverse-proxy X-Forwarded-For header so req.ip
+// reflects the real client IP, not the Docker bridge (172.x.x.x).
+app.set('trust proxy', true);
 app.use(express.json());
 app.use(require('./middleware/tenantScope'));
 
