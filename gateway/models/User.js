@@ -7,6 +7,7 @@ const userSchema = new mongoose.Schema({
   username: String,
   passwordHash: String,
   email: { type: String, default: null },
+  role: { type: String, enum: ['admin', 'user'], default: 'user', index: true },
   knownDevices: [{ ip: String, userAgent: String, firstSeenAt: Date }],
   createdAt: { type: Date, default: Date.now },
 });

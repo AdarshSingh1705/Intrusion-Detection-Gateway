@@ -12,8 +12,8 @@ app.use(require('./middleware/tenantScope'));
 
 // Dashboard-facing routes (do NOT go through the proxy/guards pipeline)
 app.use('/auth', require('./middleware/guardCheck'), require('./routes/auth'));
-app.use('/api/tenants', require('./routes/tenants'));
-app.use('/api', require('./middleware/adminAuth'), require('./routes/api'));
+app.use('/api/tenants', require('./middleware/requireAdmin'), require('./routes/tenants'));
+app.use('/api', require('./middleware/requireAdmin'), require('./routes/api'));
 
 // Circuit breaker runs before the proxy — serves holding page if origin is down
 app.use(require('./middleware/circuitBreaker'));

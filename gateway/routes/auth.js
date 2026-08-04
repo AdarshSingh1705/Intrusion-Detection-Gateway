@@ -7,15 +7,17 @@ const redis = require('../config/redis');
 const defaultTenant = require('../config/defaultTenant');
 const { lockAccount, isLocked } = require('../services/lockout');
 const { notifyUser } = require('../services/alerting');
+const evaluatePayloadGuard = require('../guards/payloadGuard');
 
 function issueTokens(user) {
+  const role = user.role || 'user';
   const accessToken = jwt.sign(
-    { sub: user._id, tenantId: user.tenantId },
+    { sub: user._id, tenantId: user.tenantId, role },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
   );
   const refreshToken = jwt.sign(
-    { sub: user._id, tenantId: user.tenantId, type: 'refresh' },
+    { sub: user._id, tenantId: user.tenantId, role, type: 'refresh' },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_REFRESH_TTL || '7d' }
   );
@@ -36,6 +38,7 @@ router.post('/signup', async (req, res) => {
     username,
     passwordHash,
     email: email || null,
+    role: 'user',
     knownDevices: [],
   });
   res.status(201).json({ userId: user._id });
@@ -49,6 +52,11 @@ router.post('/login', async (req, res) => {
   // Pre-check: account already locked from a previous brute-force window
   if (await isLocked(tenantId, username)) {
     return res.status(423).json({ error: 'account_locked', reason: 'brute_force' });
+  }
+
+  const payloadResult = evaluatePayloadGuard(req);
+  if (payloadResult.verdict === 'malicious') {
+    return res.status(403).json({ error: 'blocked', reason: payloadResult.reason });
   }
 
   const user = await User.findOne({ tenantId, username });

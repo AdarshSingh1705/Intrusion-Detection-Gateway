@@ -12,13 +12,20 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 
 async function seedAdminUser() {
   const existing = await User.findOne({ tenantId: 'default', username: ADMIN_USERNAME });
-  if (existing) return;
+  if (existing) {
+    if (existing.role !== 'admin') {
+      existing.role = 'admin';
+      await existing.save();
+    }
+    return;
+  }
 
   const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
   await User.create({
     tenantId: 'default',
     username: ADMIN_USERNAME,
     passwordHash,
+    role: 'admin',
     knownDevices: [],
   });
   console.log(`[seed] Admin user created — username: ${ADMIN_USERNAME}`);
