@@ -1,19 +1,27 @@
+const { validateEnvironment, getHealthSnapshot } = require('./config/startup');
+validateEnvironment();
+
 const mongoose = require('./config/db');
 require('./config/redis');
 require('./services/healthMonitor');
 
 const express = require('express');
 const app = express();
+
 // Trust the Docker/reverse-proxy X-Forwarded-For header so req.ip
 // reflects the real client IP, not the Docker bridge (172.x.x.x).
 app.set('trust proxy', true);
 app.use(express.json());
 app.use(require('./middleware/tenantScope'));
 
+app.get('/health', async (req, res) => {
+  res.json(await getHealthSnapshot());
+});
+
 // Dashboard-facing routes (do NOT go through the proxy/guards pipeline)
 app.use('/auth', require('./middleware/guardCheck'), require('./routes/auth'));
-app.use('/api/tenants', require('./middleware/requireAdmin'), require('./routes/tenants'));
-app.use('/api', require('./middleware/requireAdmin'), require('./routes/api'));
+app.use('/api/tenants', require('./middleware/requireAuth'), require('./routes/tenants'));
+app.use('/api', require('./middleware/requireAuth'), require('./routes/api'));
 
 // Circuit breaker runs before the proxy — serves holding page if origin is down
 app.use(require('./middleware/circuitBreaker'));

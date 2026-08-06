@@ -1,1 +1,1 @@
-module.exports = require('./requireAdmin');
+module.exports = require('./requireTenantAdmin');

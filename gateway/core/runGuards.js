@@ -12,9 +12,10 @@ async function runGuards(req, tenantConfig) {
     evaluatePayloadGuard(req),
   ]);
 
+  const degraded = authResult.degraded || rateResult.degraded;
   const verdict = decide([authResult, rateResult, payloadResult]);
+  if (degraded) verdict.degraded = true;
 
-  // Fire-and-forget: log + alert must never block the response
   logEvent(req, verdict).then((event) => {
     if (event && (verdict.finalVerdict === 'block' || verdict.finalVerdict === 'challenge')) {
       sendAlert(tenantConfig.tenantId, event);

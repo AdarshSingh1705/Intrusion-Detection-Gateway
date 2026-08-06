@@ -21,8 +21,9 @@ async function request(path, options = {}) {
         body: JSON.stringify({ refreshToken }),
       });
       if (refreshRes.ok) {
-        const { accessToken } = await refreshRes.json();
+        const { accessToken, refreshToken: newRefreshToken } = await refreshRes.json();
         localStorage.setItem('accessToken', accessToken);
+        if (newRefreshToken) localStorage.setItem('refreshToken', newRefreshToken);
         // Retry original request with new token
         const retry = await fetch(`${BASE}${path}`, {
           ...options,
@@ -88,6 +89,14 @@ export async function acknowledgeAlert(id) {
 }
 
 // Blocklist
+export async function getActiveBlocklist() {
+  return request('/api/blocklist');
+}
+
+export async function checkIpBlocked(ip) {
+  return request(`/api/blocklist/${encodeURIComponent(ip)}`);
+}
+
 export async function blockIp(ip) {
   return request(`/api/blocklist/${encodeURIComponent(ip)}`, { method: 'POST' });
 }

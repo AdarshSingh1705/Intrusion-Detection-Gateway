@@ -9,15 +9,18 @@ const { lockAccount, isLocked } = require('../services/lockout');
 const { notifyUser } = require('../services/alerting');
 const evaluatePayloadGuard = require('../guards/payloadGuard');
 
+const { v4: uuidv4 } = require('uuid');
+
 function issueTokens(user) {
   const role = user.role || 'user';
+  const jti = uuidv4();
   const accessToken = jwt.sign(
     { sub: user._id, tenantId: user.tenantId, role },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
   );
   const refreshToken = jwt.sign(
-    { sub: user._id, tenantId: user.tenantId, role, type: 'refresh' },
+    { sub: user._id, tenantId: user.tenantId, role, type: 'refresh', jti },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_REFRESH_TTL || '7d' }
   );
@@ -28,6 +31,18 @@ router.post('/signup', async (req, res) => {
   const { username, password, email } = req.body;
   if (!username || !password)
     return res.status(400).json({ error: 'username and password required' });
+
+  // Rate limit signups per IP (max 10 per hour)
+  try {
+    const signupKey = `signup_rate:${req.ip}`;
+    const signupCount = await redis.incr(signupKey);
+    if (signupCount === 1) await redis.expire(signupKey, 3600);
+    if (signupCount > 10) {
+      return res.status(429).json({ error: 'too_many_signups', reason: 'signup_rate_exceeded' });
+    }
+  } catch (err) {
+    console.error('[auth/signup] Redis error:', err.message);
+  }
 
   const existing = await User.findOne({ tenantId: defaultTenant.tenantId, username });
   if (existing) return res.status(409).json({ error: 'username already taken' });
@@ -92,6 +107,10 @@ router.post('/login', async (req, res) => {
   );
   if (!knownDevice) {
     user.knownDevices.push({ ip, userAgent: req.headers['user-agent'], firstSeenAt: new Date() });
+    // Bound the array to the 20 most recent devices so it can't grow unbounded.
+    if (user.knownDevices.length > 20) {
+      user.knownDevices = user.knownDevices.slice(-20);
+    }
     await user.save();
     // TODO Phase 5: send OTP challenge instead of letting straight through
   }
@@ -107,15 +126,22 @@ router.post('/refresh', async (req, res) => {
     const payload = jwt.verify(refreshToken, process.env.JWT_SECRET);
     if (payload.type !== 'refresh') return res.status(401).json({ error: 'invalid token type' });
 
+    const tokenId = payload.jti || payload.sub;
     // Check if token has been revoked
-    const revoked = await redis.exists(`revoked:${payload.jti || payload.sub}`);
+    const revoked = await redis.exists(`revoked:${tokenId}`);
     if (revoked) return res.status(401).json({ error: 'token revoked' });
 
     const user = await User.findById(payload.sub);
     if (!user) return res.status(401).json({ error: 'user not found' });
 
-    const { accessToken } = issueTokens(user);
-    res.json({ accessToken });
+    // Revoke old refresh token (7 days TTL matching token expiry)
+    if (payload.jti) {
+      await redis.set(`revoked:${payload.jti}`, '1', 'EX', 7 * 86400);
+    }
+
+    // Issue rotated token pair
+    const tokens = issueTokens(user);
+    res.json(tokens);
   } catch (err) {
     res.status(401).json({ error: 'invalid or expired token' });
   }

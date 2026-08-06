@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getEvents, getAlerts, acknowledgeAlert, blockIp } from '../api/client';
+import { getEvents, getAlerts, acknowledgeAlert, blockIp, unblockIp, getActiveBlocklist } from '../api/client';
 
 const VERDICT_STYLES = {
   block:     'bg-red-900 text-red-300',
@@ -25,15 +25,21 @@ function Badge({ value, styleMap }) {
 export default function LiveFeed() {
   const [events, setEvents] = useState([]);
   const [alerts, setAlerts] = useState([]);
+  const [activeBlocks, setActiveBlocks] = useState([]);
   const [filter, setFilter] = useState('');
   const [loading, setLoading] = useState(true);
-  const [blockedIp, setBlockedIp] = useState('');
+  const [actionStatus, setActionStatus] = useState('');
 
   const fetchData = useCallback(async () => {
     try {
-      const [evts, alts] = await Promise.all([getEvents({ limit: 100 }), getAlerts(false)]);
+      const [evts, alts, blocks] = await Promise.all([
+        getEvents({ limit: 100 }),
+        getAlerts(false),
+        getActiveBlocklist().catch(() => []),
+      ]);
       setEvents(evts);
       setAlerts(alts);
+      setActiveBlocks(blocks || []);
     } catch (err) {
       console.error('Fetch failed', err.message);
     } finally {
@@ -48,15 +54,39 @@ export default function LiveFeed() {
   }, [fetchData]);
 
   async function handleAcknowledge(id) {
-    await acknowledgeAlert(id);
-    setAlerts((prev) => prev.filter((a) => a._id !== id));
+    try {
+      await acknowledgeAlert(id);
+      setAlerts((prev) => prev.filter((a) => a._id !== id));
+      setActionStatus('Alert acknowledged');
+      setTimeout(() => setActionStatus(''), 3000);
+    } catch (err) {
+      setActionStatus(`Error acknowledging alert: ${err.message}`);
+    }
   }
 
   async function handleBlockIp(ip) {
-    await blockIp(ip);
-    setBlockedIp(ip);
-    setTimeout(() => setBlockedIp(''), 3000);
+    try {
+      await blockIp(ip);
+      setActionStatus(`✓ IP ${ip} added to Redis blocklist (15m TTL). Future requests blocked.`);
+      fetchData();
+      setTimeout(() => setActionStatus(''), 4000);
+    } catch (err) {
+      setActionStatus(`Error blocking IP: ${err.message}`);
+    }
   }
+
+  async function handleUnblockIp(ip) {
+    try {
+      await unblockIp(ip);
+      setActionStatus(`✓ IP ${ip} removed from Redis blocklist. Future requests ALLOWED.`);
+      fetchData();
+      setTimeout(() => setActionStatus(''), 4000);
+    } catch (err) {
+      setActionStatus(`Error unblocking IP: ${err.message}`);
+    }
+  }
+
+  const blockedIpSet = new Set(activeBlocks.map((b) => b.ip));
 
   const filtered = filter
     ? events.filter((e) => e.verdict === filter)
@@ -64,6 +94,40 @@ export default function LiveFeed() {
 
   return (
     <div className="space-y-6">
+      {/* Active Redis Blocklist Card */}
+      <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-semibold text-gray-200 flex items-center gap-2">
+            <span>🛡️ Active Redis Blocklist</span>
+            <span className="text-xs bg-red-900/60 text-red-300 px-2 py-0.5 rounded font-mono">
+              {activeBlocks.length} Active {activeBlocks.length === 1 ? 'Block' : 'Blocks'}
+            </span>
+          </h2>
+          <span className="text-xs text-gray-500">
+            Enforced in real-time by Gateway proxy
+          </span>
+        </div>
+
+        {activeBlocks.length === 0 ? (
+          <p className="text-xs text-gray-400 font-mono">No IPs are currently blocked in Redis. Traffic is flowing normally.</p>
+        ) : (
+          <div className="flex flex-wrap gap-3">
+            {activeBlocks.map((b) => (
+              <div key={b.ip} className="flex items-center gap-3 bg-red-950/60 border border-red-800/60 px-3 py-1.5 rounded text-xs font-mono">
+                <span className="text-red-200 font-bold">{b.ip}</span>
+                <span className="text-red-400">({b.ttl > 0 ? `${Math.ceil(b.ttl / 60)}m left` : 'expired'})</span>
+                <button
+                  onClick={() => handleUnblockIp(b.ip)}
+                  className="bg-green-800 hover:bg-green-700 text-white px-2 py-0.5 rounded font-sans text-xs"
+                >
+                  Unblock
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Unacknowledged alerts banner */}
       {alerts.length > 0 && (
         <div className="bg-red-950 border border-red-700 rounded-lg p-4">
@@ -86,10 +150,19 @@ export default function LiveFeed() {
         </div>
       )}
 
+      {actionStatus && (
+        <div className="bg-gray-800 text-indigo-300 px-4 py-2 rounded text-sm font-mono border border-indigo-500/30">
+          {actionStatus}
+        </div>
+      )}
+
       {/* Event table */}
       <div className="bg-gray-900 rounded-lg overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
-          <h2 className="font-semibold text-gray-200">Live Event Feed</h2>
+          <div>
+            <h2 className="font-semibold text-gray-200">Historical Request Audit Log</h2>
+            <p className="text-xs text-gray-500">Immutable audit log of past HTTP requests processed by the gateway</p>
+          </div>
           <div className="flex gap-2">
             {['', 'block', 'throttle', 'challenge', 'allow'].map((v) => (
               <button
@@ -112,41 +185,51 @@ export default function LiveFeed() {
             <table className="w-full text-sm">
               <thead className="text-gray-500 text-xs uppercase border-b border-gray-800">
                 <tr>
-                  {['Time', 'IP', 'Method', 'Path', 'Verdict', 'Rule', 'Severity', 'Action'].map((h) => (
+                  {['Time', 'IP', 'Method', 'Path', 'Past Verdict', 'Rule', 'Severity', 'Active Enforcement'].map((h) => (
                     <th key={h} className="px-4 py-2 text-left">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((e) => (
-                  <tr key={e._id} className="border-b border-gray-800/50 hover:bg-gray-800/30">
-                    <td className="px-4 py-2 text-gray-400 whitespace-nowrap">
-                      {new Date(e.timestamp).toLocaleTimeString()}
-                    </td>
-                    <td className="px-4 py-2 font-mono text-gray-300">{e.ip}</td>
-                    <td className="px-4 py-2 text-gray-400">{e.method}</td>
-                    <td className="px-4 py-2 text-gray-400 max-w-xs truncate">{e.path}</td>
-                    <td className="px-4 py-2">
-                      <Badge value={e.verdict} styleMap={VERDICT_STYLES} />
-                    </td>
-                    <td className="px-4 py-2 text-gray-400">{e.ruleTriggered || '—'}</td>
-                    <td className="px-4 py-2">
-                      <span className={`text-xs font-semibold ${SEVERITY_STYLES[e.severity]}`}>
-                        {e.severity}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2">
-                      {e.verdict === 'allow' && (
-                        <button
-                          onClick={() => handleBlockIp(e.ip)}
-                          className="text-xs bg-red-800 hover:bg-red-700 px-2 py-1 rounded text-white"
-                        >
-                          {blockedIp === e.ip ? 'Blocked ✓' : 'Block IP'}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {filtered.map((e) => {
+                  const isBlockedInRedis = blockedIpSet.has(e.ip);
+                  return (
+                    <tr key={e._id} className="border-b border-gray-800/50 hover:bg-gray-800/30">
+                      <td className="px-4 py-2 text-gray-400 whitespace-nowrap">
+                        {new Date(e.timestamp).toLocaleTimeString()}
+                      </td>
+                      <td className="px-4 py-2 font-mono text-gray-300">{e.ip}</td>
+                      <td className="px-4 py-2 text-gray-400">{e.method}</td>
+                      <td className="px-4 py-2 text-gray-400 max-w-xs truncate">{e.path}</td>
+                      <td className="px-4 py-2">
+                        <Badge value={e.verdict} styleMap={VERDICT_STYLES} />
+                      </td>
+                      <td className="px-4 py-2 text-gray-400">{e.ruleTriggered || '—'}</td>
+                      <td className="px-4 py-2">
+                        <span className={`text-xs font-semibold ${SEVERITY_STYLES[e.severity]}`}>
+                          {e.severity}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2">
+                        {isBlockedInRedis ? (
+                          <button
+                            onClick={() => handleUnblockIp(e.ip)}
+                            className="text-xs bg-green-800 hover:bg-green-700 px-2 py-1 rounded text-white font-semibold"
+                          >
+                            Unblock IP
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleBlockIp(e.ip)}
+                            className="text-xs bg-red-800 hover:bg-red-700 px-2 py-1 rounded text-white font-semibold"
+                          >
+                            Block IP
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

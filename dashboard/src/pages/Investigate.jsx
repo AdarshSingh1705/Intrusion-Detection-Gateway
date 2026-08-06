@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { getEventsByIp, blockIp, unblockIp } from '../api/client';
+import { getEventsByIp, blockIp, unblockIp, checkIpBlocked } from '../api/client';
 
 const VERDICT_STYLES = {
   block:     'bg-red-900 text-red-300',
@@ -14,15 +14,22 @@ export default function Investigate() {
   const [searched, setSearched] = useState(false);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
+  const [isCurrentlyBlocked, setIsCurrentlyBlocked] = useState(false);
 
   async function handleSearch(e) {
-    e.preventDefault();
-    if (!ip.trim()) return;
+    if (e) e.preventDefault();
+    const searchIp = ip.trim();
+    if (!searchIp) return;
     setLoading(true);
     setSearched(false);
+    setStatus('');
     try {
-      const data = await getEventsByIp(ip.trim());
+      const [data, blockState] = await Promise.all([
+        getEventsByIp(searchIp),
+        checkIpBlocked(searchIp).catch(() => ({ blocked: false })),
+      ]);
       setEvents(data);
+      setIsCurrentlyBlocked(Boolean(blockState?.blocked));
       setSearched(true);
     } catch (err) {
       setStatus(`Error: ${err.message}`);
@@ -32,13 +39,29 @@ export default function Investigate() {
   }
 
   async function handleBlock() {
-    await blockIp(ip.trim());
-    setStatus(`✓ ${ip} blocked for 15 minutes`);
+    const targetIp = ip.trim();
+    if (!targetIp) return;
+    try {
+      await blockIp(targetIp);
+      setStatus(`✓ ${targetIp} blocked for 15 minutes in Redis`);
+      setIsCurrentlyBlocked(true);
+      handleSearch();
+    } catch (err) {
+      setStatus(`Error blocking IP: ${err.message}`);
+    }
   }
 
   async function handleUnblock() {
-    await unblockIp(ip.trim());
-    setStatus(`✓ ${ip} unblocked`);
+    const targetIp = ip.trim();
+    if (!targetIp) return;
+    try {
+      await unblockIp(targetIp);
+      setStatus(`✓ ${targetIp} unblocked from Redis`);
+      setIsCurrentlyBlocked(false);
+      handleSearch();
+    } catch (err) {
+      setStatus(`Error unblocking IP: ${err.message}`);
+    }
   }
 
   const blockCount = events.filter((e) => e.verdict === 'block').length;
@@ -51,7 +74,7 @@ export default function Investigate() {
         <form onSubmit={handleSearch} className="flex gap-3">
           <input
             className="flex-1 bg-gray-800 text-white px-3 py-2 rounded border border-gray-700 focus:outline-none focus:border-indigo-500 font-mono"
-            placeholder="Enter IP address e.g. 192.168.1.1"
+            placeholder="Enter IP address e.g. 127.0.0.1 or 172.18.0.1"
             value={ip}
             onChange={(e) => setIp(e.target.value)}
           />
@@ -62,27 +85,35 @@ export default function Investigate() {
             {loading ? 'Searching...' : 'Search'}
           </button>
         </form>
-        {status && <p className="mt-2 text-sm text-green-400">{status}</p>}
+        {status && <p className="mt-2 text-sm text-green-400 font-mono">{status}</p>}
       </div>
 
       {searched && (
         <>
           {/* Summary */}
-          <div className="grid grid-cols-3 gap-4">
-            {[
-              { label: 'Total Events', value: events.length, color: 'text-gray-200' },
-              { label: 'Blocks', value: blockCount, color: 'text-red-400' },
-              { label: 'Throttles', value: throttleCount, color: 'text-yellow-400' },
-            ].map(({ label, value, color }) => (
-              <div key={label} className="bg-gray-900 rounded-lg p-4 text-center">
-                <p className={`text-2xl font-bold ${color}`}>{value}</p>
-                <p className="text-gray-500 text-sm">{label}</p>
-              </div>
-            ))}
+          <div className="grid grid-cols-4 gap-4">
+            <div className="bg-gray-900 rounded-lg p-4 text-center">
+              <p className="text-2xl font-bold text-gray-200">{events.length}</p>
+              <p className="text-gray-500 text-sm">Total Events</p>
+            </div>
+            <div className="bg-gray-900 rounded-lg p-4 text-center">
+              <p className="text-2xl font-bold text-red-400">{blockCount}</p>
+              <p className="text-gray-500 text-sm">Blocks</p>
+            </div>
+            <div className="bg-gray-900 rounded-lg p-4 text-center">
+              <p className="text-2xl font-bold text-yellow-400">{throttleCount}</p>
+              <p className="text-gray-500 text-sm">Throttles</p>
+            </div>
+            <div className="bg-gray-900 rounded-lg p-4 text-center flex flex-col items-center justify-center">
+              <span className={`px-3 py-1 rounded text-xs font-bold ${isCurrentlyBlocked ? 'bg-red-900 text-red-300 border border-red-500' : 'bg-green-900 text-green-300'}`}>
+                {isCurrentlyBlocked ? 'BLOCKED IN REDIS' : 'NOT BLOCKED'}
+              </span>
+              <p className="text-gray-500 text-xs mt-1">Current State</p>
+            </div>
           </div>
 
           {/* Manual controls */}
-          <div className="flex gap-3">
+          <div className="flex gap-3 items-center">
             <button
               onClick={handleBlock}
               className="bg-red-700 hover:bg-red-600 text-white px-4 py-2 rounded text-sm font-semibold"
@@ -91,7 +122,7 @@ export default function Investigate() {
             </button>
             <button
               onClick={handleUnblock}
-              className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded text-sm font-semibold"
+              className="bg-green-700 hover:bg-green-600 text-white px-4 py-2 rounded text-sm font-semibold"
             >
               Unblock {ip}
             </button>

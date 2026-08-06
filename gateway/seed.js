@@ -13,9 +13,10 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 async function seedAdminUser() {
   const existing = await User.findOne({ tenantId: 'default', username: ADMIN_USERNAME });
   if (existing) {
-    if (existing.role !== 'admin') {
-      existing.role = 'admin';
+    if (existing.role !== 'superadmin') {
+      existing.role = 'superadmin';
       await existing.save();
+      console.log(`[seed] Promoted existing default user to superadmin — username: ${ADMIN_USERNAME}`);
     }
     return;
   }
@@ -25,10 +26,10 @@ async function seedAdminUser() {
     tenantId: 'default',
     username: ADMIN_USERNAME,
     passwordHash,
-    role: 'admin',
+    role: 'superadmin',
     knownDevices: [],
   });
-  console.log(`[seed] Admin user created — username: ${ADMIN_USERNAME}`);
+  console.log(`[seed] Superadmin bootstrap user created — username: ${ADMIN_USERNAME}`);
 }
 
 async function seedDefaultTenant() {
