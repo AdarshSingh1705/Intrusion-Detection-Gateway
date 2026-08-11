@@ -8,14 +8,16 @@ require('./services/healthMonitor');
 const express = require('express');
 const app = express();
 
-// Trust the Docker/reverse-proxy X-Forwarded-For header so req.ip
-// reflects the real client IP, not the Docker bridge (172.x.x.x).
 app.set('trust proxy', true);
 app.use(express.json());
 app.use(require('./middleware/tenantScope'));
 
 app.get('/health', async (req, res) => {
-  res.json(await getHealthSnapshot());
+  const health = await getHealthSnapshot();
+
+  const statusCode = health.status === 'ok' ? 200 : 503;
+
+  res.status(statusCode).json(health);
 });
 
 // Dashboard-facing routes (do NOT go through the proxy/guards pipeline)
@@ -35,4 +37,35 @@ mongoose.connection.once('open', async () => {
   await seedAdminUser();
 });
 
-app.listen(PORT, () => console.log(`Gateway listening on ${PORT}`));
+const server = app.listen(PORT, () => {
+  console.log(`Gateway listening on ${PORT}`);
+});
+
+async function gracefulShutdown(signal) {
+  console.log(`[shutdown] Received ${signal}. Shutting down gracefully...`);
+
+  server.close(async () => {
+    try {
+      await mongoose.connection.close();
+      console.log('[shutdown] MongoDB connection closed');
+
+      const redis = require('./config/redis');
+      await redis.quit();
+      console.log('[shutdown] Redis connection closed');
+
+      process.exit(0);
+    } catch (err) {
+      console.error('[shutdown] Error during shutdown:', err);
+      process.exit(1);
+    }
+  });
+
+  // Don't wait forever if a connection refuses to close.
+  setTimeout(() => {
+    console.error('[shutdown] Forced shutdown after timeout');
+    process.exit(1);
+  }, 10000).unref();
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

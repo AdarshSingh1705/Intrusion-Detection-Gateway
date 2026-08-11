@@ -1,27 +1,21 @@
-
 services:
   gateway:
     build: ./gateway
     ports: ["8080:8080"]
     env_file: .env
-    volumes:
-      - ./gateway:/app
-      - /app/node_modules
-    command: npm run dev
+    environment:
+      NODE_ENV: production
     depends_on: [redis, mongo, demo-site]
 
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
 
   mongo:
     image: mongo:7
-    ports: ["27017:27017"]
     volumes: ["mongo-data:/data/db"]
 
   demo-site:
     build: ./demo-site
-    ports: ["4000:4000"]
 
   dashboard:
     build: ./dashboard

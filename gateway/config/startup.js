@@ -8,17 +8,35 @@ const FALLBACKS = {
 };
 
 function validateEnvironment() {
+  const requiredInProduction = [
+    'MONGO_URI',
+    'REDIS_URL',
+    'JWT_SECRET',
+  ];
+
+  if (process.env.NODE_ENV === 'production') {
+    for (const key of requiredInProduction) {
+      if (!process.env[key]) {
+        throw new Error(
+          `[startup] ${key} must be set when NODE_ENV=production`
+        );
+      }
+    }
+
+    return {
+      MONGO_URI: process.env.MONGO_URI,
+      REDIS_URL: process.env.REDIS_URL,
+      JWT_SECRET: process.env.JWT_SECRET,
+    };
+  }
+
   for (const [key, fallback] of Object.entries(FALLBACKS)) {
     if (process.env[key]) continue;
 
-    // JWT_SECRET is a hard requirement in production — fail fast instead of
-    // silently signing tokens with a publicly-known fallback secret.
-    if (key === 'JWT_SECRET' && process.env.NODE_ENV === 'production') {
-      throw new Error('[startup] JWT_SECRET must be set when NODE_ENV=production');
-    }
-
     process.env[key] = fallback;
-    console.warn(`[startup] ${key} not set; using fallback value for local/dev execution`);
+    console.warn(
+      `[startup] ${key} not set; using fallback value for local/dev execution`
+    );
   }
 
   return {
