@@ -1,0 +1,58 @@
+services:
+  gateway:
+    build: ./gateway
+    env_file: .env
+    environment:
+      NODE_ENV: production
+    expose:
+      - "8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      demo-site:
+        condition: service_started
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    expose:
+      - "6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongo-data:/data/db
+    expose:
+      - "27017"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  demo-site:
+    build: ./demo-site
+    expose:
+      - "4000"
+    restart: unless-stopped
+
+  dashboard:
+    build: ./dashboard
+    expose:
+      - "3000"
+    depends_on:
+      gateway:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  mongo-data:
