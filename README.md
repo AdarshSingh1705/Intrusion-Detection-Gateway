@@ -69,7 +69,7 @@ curl http://localhost:8080/
 
 **4. Open the dashboard**
 
-Navigate to `http://localhost:3000` and log in with the seeded admin credentials (default: `admin` / `admin123`).
+Navigate to `http://localhost:3000` and log in with the seeded admin credentials (default: your-admin-username / your-admin-pass ).
 
 ---
 
@@ -77,10 +77,10 @@ Navigate to `http://localhost:3000` and log in with the seeded admin credentials
 
 On first boot the gateway automatically creates a platform-level `superadmin` account in the `default` tenant and seeds the default tenant configuration:
 
-| Resource       | Value                                                   |
-| -------------- | ------------------------------------------------------- |
-| Superadmin user| `ADMIN_USERNAME` / `ADMIN_PASSWORD` (from `.env`) |
-| Default tenant | `tenantId: "default"` with test thresholds            |
+| Resource        | Value                                                   |
+| --------------- | ------------------------------------------------------- |
+| Superadmin user | `ADMIN_USERNAME` / `ADMIN_PASSWORD` (from `.env`) |
+| Default tenant  | `tenantId: "default"` with test thresholds            |
 
 This bootstrap path is the platform owner story: the seeded `superadmin` is the only role that can create additional tenants and manage tenant-wide platform onboarding. The seed is idempotent — it checks for existence before creating, so it is safe to run on every restart.
 
@@ -104,8 +104,8 @@ docker compose up --build
 | `JWT_SECRET`           | Yes      | Secret for signing access + refresh tokens                         |
 | `JWT_ACCESS_TTL`       | No       | Access token lifetime (default`15m`)                             |
 | `JWT_REFRESH_TTL`      | No       | Refresh token lifetime (default`7d`)                             |
-| `ADMIN_USERNAME`       | No       | Seeded admin username (default`admin`)                           |
-| `ADMIN_PASSWORD`       | No       | Seeded admin password (default`admin123`)                        |
+| `ADMIN_USERNAME`       | No       | Seeded admin username                                              |
+| `ADMIN_PASSWORD`       | No       | Seeded admin password                                              |
 | `DEMO_SITE_ORIGIN_URL` | No       | Origin to proxy to (default`http://demo-site:4000`)              |
 | `BREVO_API_KEY`        | No       | Brevo API key — enables email alerts (admin + user notifications) |
 | `ALERT_SENDER_EMAIL`   | No       | From address for all alert emails                                  |
@@ -166,11 +166,11 @@ Login responses:
 
 ### Tenant onboarding
 
-| Method    | Path                                  | Body                                           | Response                                       |
-| --------- | ------------------------------------- | ---------------------------------------------- | ---------------------------------------------- |
+| Method    | Path                                  | Body                                                                 | Response                                       |
+| --------- | ------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------- |
 | `POST`  | `/api/tenants`                      | `{ domain, originUrl, adminUsername, adminPassword, adminEmail? }` | `201 { tenantId, apiKey }` — key shown once |
-| `GET`   | `/api/tenants/:tenantId`            | —                                             | `200 { tenant config }`                      |
-| `PATCH` | `/api/tenants/:tenantId/thresholds` | `{ authFailMax, rateWarnMax, rateBlockMax }` | `200`                                        |
+| `GET`   | `/api/tenants/:tenantId`            | —                                                                   | `200 { tenant config }`                      |
+| `PATCH` | `/api/tenants/:tenantId/thresholds` | `{ authFailMax, rateWarnMax, rateBlockMax }`                       | `200`                                        |
 
 > Authorization model: tenant-bound business queries use the authenticated `req.user.tenantId` as the single source of truth. The route parameter is only used to identify the requested resource, and any request that tries to cross from one logical tenant boundary to another is rejected with `403 cross-tenant access rejected`.
 
@@ -192,11 +192,11 @@ Every incoming request is resolved to a tenant from its hostname (`gateway/middl
 
 ### Role model
 
-| Role          | Scope      | Can do                                                                 |
-| ------------- | ---------- | ---------------------------------------------------------------------- |
-| `superadmin`  | Platform   | Create tenants, manage any tenant, bootstrap the platform              |
-| `admin`       | One tenant | Manage their own tenant's events, alerts, thresholds, blocklist        |
-| `user`        | One tenant | End-user of a protected site (signup/login)                            |
+| Role           | Scope      | Can do                                                          |
+| -------------- | ---------- | --------------------------------------------------------------- |
+| `superadmin` | Platform   | Create tenants, manage any tenant, bootstrap the platform       |
+| `admin`      | One tenant | Manage their own tenant's events, alerts, thresholds, blocklist |
+| `user`       | One tenant | End-user of a protected site (signup/login)                     |
 
 - `gateway/middleware/requireSuperAdmin.js` — guards tenant creation (`POST /api/tenants`).
 - `gateway/middleware/requireTenantAdmin.js` — guards all tenant-scoped management API routes.

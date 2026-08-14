@@ -4,7 +4,7 @@ const redis = require('./redis');
 const FALLBACKS = {
   MONGO_URI: 'mongodb://mongo:27017/gateway',
   REDIS_URL: 'redis://redis:6379',
-  JWT_SECRET: 'dev-secret-change-me',
+  JWT_SECRET: 'dev-only-insecure-secret',
 };
 
 function validateEnvironment() {

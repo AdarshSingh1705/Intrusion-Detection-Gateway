@@ -8,6 +8,11 @@ module.exports = function requireAuth(req, res, next) {
 
   try {
     const payload = jwt.verify(header.slice(7), process.env.JWT_SECRET);
+  
+    if (payload.type !== 'access') {
+      return res.status(401).json({ error: 'invalid token type' });
+    }
+  
     req.user = payload;
     next();
   } catch (err) {
